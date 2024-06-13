@@ -125,32 +125,42 @@ class LeafNode(Node):
     def __init__(self, page_parent: Optional[int] = None, is_leaf: bool = False):
         super().__init__(page_parent, is_leaf)
 
-    # TODO：不允许插入key相同的数据，同时应该改为二分以提高效率吧
     def add(self, key: int, value: str) -> bool:
-        # Insert key and value if keys list is empty
-        if not self.keys:
-            self.keys.append(key)
-            self.values.append([value])
-            return
-        # Otherwise, search for every key in keys list.
-        for i, item in enumerate(self.keys):
-            # Key found
-            if key == item:
-                # Append value in a list of data
-                self.values[i].append(value)
-                break
-            # Key not found && key < item
-            elif key < item:
-                # Append key and value before item
-                self.keys = self.keys[:i] + [key] + self.keys[i:]
-                self.values = self.values[:i] + [[value]] + self.values[i:]
-                break
-            # If we have reached last iteration.
-            elif i + 1 == len(self.keys):
-                # Append it in last position.
-                self.keys.append(key)
-                self.values.append([value])
-                break
+        """
+        在叶子节点中添加键值对。如果键已经存在，则在其关联的值列表中追加值；如果键不存在，通过二分查找找到合适的位置插入新键值对。
+        """
+        # 使用二分查找确定插入位置，同时检查键是否已存在
+        index = self.binary_search(key)
+
+        # 如果键已存在，则不允许插入
+        if index < len(self.keys) and self.keys[index] == key:
+            return False
+
+        # 键不存在，插入新键值对
+        self.keys.insert(index, key)
+        self.values.insert(index, value)  # 新建一个列表存储值
+
+        # 检查是否需要分裂节点
+        if len(self.serialize()) > Node.page_max_size:
+            self.split()
+
+        return True  # 成功插入
+
+    def binary_search(self, target_key: int) -> int:
+        """
+        在叶子节点的keys中进行二分查找，返回目标键应该插入的位置。
+        如果找到相同的键，则返回其索引；如果目标键小于所有键，则返回0；
+        如果目标键大于所有键，则返回keys列表的长度。
+        """
+        low, high = 0, len(self.keys)
+        while low < high:
+            mid = (low + high) // 2
+            mid_val = self.keys[mid]
+            if mid_val < target_key:
+                low = mid + 1
+            else:
+                high = mid
+        return low
 
     def split(self) -> tuple['Node', 'Node', 'Node']:
         top = Node()
