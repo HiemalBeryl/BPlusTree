@@ -82,11 +82,17 @@ class BPlusTree:
             if len(node.serialize()) <= Node.page_max_size:
                 return True
             else:
-                p, l, r = node.split(self.memory.get_page(node.page_parent))
-                self.split_count += 1
-                self.memory.put_page(p.page_offset, p)
-                self.memory.put_page(l.page_offset, l)
-                self.memory.put_page(r.page_offset, r)
+                while True:
+                    p, l, r = node.split(self.memory.get_page(node.page_parent))
+                    self.split_count += 1
+                    self.memory.put_page(p.page_offset, p)
+                    self.memory.put_page(l.page_offset, l)
+                    self.memory.put_page(r.page_offset, r)
+                    node = p
+                    if len(p.serialize()) <= Node.page_max_size:
+                        break
+
+
                 # 3. 父节点在此时插入了右孩子节点的最小值，如果此时父节点已满，则需要分裂父节点
                 while len(p.serialize()) >= Node.page_max_size:
                     p, l, r = p.split(self.memory.get_page(p.page_parent))
@@ -96,10 +102,6 @@ class BPlusTree:
                     self.memory.put_page(r.page_offset, r)
                     # 重新设置根节点
                     self.root_node = p
-
-
-
-
 
     def delete(self, key: int) -> bool:
         pass
