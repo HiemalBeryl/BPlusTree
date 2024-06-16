@@ -82,27 +82,66 @@ class BPlusTree:
             if len(node.serialize()) <= Node.page_max_size:
                 return True
             else:
-                p, l, r = node.split(self.memory.get_page(node.page_parent))
-                self.split_count += 1
-                self.memory.put_page(p.page_offset, p)
-                self.memory.put_page(l.page_offset, l)
-                self.memory.put_page(r.page_offset, r)
-                # 3. 父节点在此时插入了右孩子节点的最小值，如果此时父节点已满，则需要分裂父节点
-                while len(p.serialize()) >= Node.page_max_size:
-                    p, l, r = p.split(self.memory.get_page(p.page_parent))
+                while True:
+                    p, l, r = node.split(self.memory.get_page(node.page_parent))
                     self.split_count += 1
                     self.memory.put_page(p.page_offset, p)
                     self.memory.put_page(l.page_offset, l)
                     self.memory.put_page(r.page_offset, r)
-                    # 重新设置根节点
-                    self.root_node = p
+                    # 3. 父节点在此时插入了右孩子节点的最小值，如果此时父节点已满，则需要循环向上分裂父节点
+                    if len(p.serialize()) <= Node.page_max_size:
+                        break
+                    node = p
+
+    def delete(self, key: int) -> int:
+        """删除页面中指定键值的数据。返回删除条数（0或1）"""
+        node = self.root_node
+        while node.is_leaf is False:
+            node = self.memory.get_page(self.root_node.values[find_last_leq(node.keys, key)])
+        index = find_last_leq(node.keys, key)
+        # 在叶子节点中不存在要删除的数据，返回0
+        if node.keys[index] != key:
+            return 0
+        else:
+            node.keys.pop(index)
+            node.values.pop(index)
+            # 判断是否需要进行平衡操作，如果需要，则需要向兄弟节点借用数据并循环向上进行平衡操作
+            while len(node.serialize()) < Node.default_merge_size:
+                # 1. 向兄弟节点借用记录，直到自己的大小大于默认值
+                brother = self.memory.get_page(node.page_prev)
+                parent = self.memory.get_page(node.page_parent)
+                flag = 0
+                if isinstance(brother, Node):
+                    if len(brother.serialize()) > Node.default_merge_size:
+                        while len(node.serialize()) < Node.default_merge_size:
+                            k, v = brother.keys.pop(), brother.values.pop()
+                            node.keys.insert(0, k)
+                            node.values.insert(0, v)
+                            if len(brother.serialize()) <= Node.default_merge_size:
+                                # 兄弟节点不允许借用，回退本次操作，同时将合并flag标记为1
+                                flag = 1
+                                brother.keys.insert(len(brother.keys), k)
+                                brother.values.insert(len(brother.values), v)
+                                node.keys.pop(0)
+                                node.values.pop(0)
+                                break
+                        node.is_changed = True
+                        brother.is_changed = True
+                        self.memory.put_page(brother.page_offset, brother.page_offset)
+                        self.memory.put_page(node.page_offset, node)
+                    else:
+                        #2. 向兄弟节点借记录失败，则需要合并节点
+                        flag = 1
+                    # 3. 检查合并标记，进行节点的合并操作
+                    if flag == 1:
+                        pass
+
+                else:
+                    # 兄弟节点不存在
+                    pass
 
 
-
-
-
-    def delete(self, key: int) -> bool:
-        pass
+        return 1
 
     def get_status(self):
         print(self.__str__())
