@@ -12,6 +12,7 @@ class Node:
         page_max_size: 页面的大小上限，默认为16kb，超出上限后页面应该主动分裂
         default_merge_size: 页面的合并默认大小，默认为7kb，当两个相邻的页面大小都小于改值时应主动合并
     """
+    # TODO:页面存在频繁的删除创建。必然会存在之前分配过的页面id被删除，存在空页，需要重新进行利用
     page_count: int = 0
     page_max_size: int = 16384
     default_merge_size = 8192 - 1024
