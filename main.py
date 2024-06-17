@@ -1,7 +1,7 @@
 import os
 import struct
 from collections import OrderedDict
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple
 
 from memory import Memorymanagement
 from node import Node, LeafNode
@@ -55,6 +55,7 @@ class BPlusTree:
                     'root_page_id': 1,
                     'page_size': 16384,
                     'root_node': LeafNode(is_leaf=True),
+                    'node_count': 1
                 }
             rid = d.get('root_page_id')
             assert rid is not None
@@ -147,13 +148,9 @@ class BPlusTree:
             else:
                 node_is_leaf = True
                 while True:
-                    if node.page_parent is None or node.page_parent <= 0:
-                        p = None
-                    else:
-                        p = self.memory.get_page(node.page_parent)
-                    p, l, r = node.split(p)
+                    p, l, r = self.__split_node(node)
                     self.split_count += 1
-                    if p.page_parent is None:
+                    if p.page_parent is None or p.page_parent == 0:
                         self.root_page_id = p.page_offset
                         self.root_node = p
                     if not node_is_leaf:
@@ -189,7 +186,30 @@ class BPlusTree:
         return 1
 
     def get_status(self):
+        with open(self.filename, 'rb') as file:
+            self.page_size = Node.page_max_size
+            # 随机找一个数，看获取多少次页面可以走到根节点即可得到树高
+            node = self.memory.get_page(48693)
+            height = 0
+            while not node.is_leaf:
+                height += 1
+                node = self.memory.get_page(height)
+            self.height = height + 1
+
+            if self.root_node.is_leaf:
+                self.fill_rate = round(len(self.root_node.serialize()) / Node.page_max_size, 4)
+            else:
+                page_offsets = [self.root_node.page_offset]
+                while len(page_offsets) > 0:
+                    page_offset = page_offsets.pop(0)
+                    node = self.memory.get_page(page_offset)
+                    if node.is_leaf:
+                        self.fill_rate += Node.page_max_size - len(node.serialize())
+                    else:
+                        page_offsets.extend(node.values)
+                self.fill_rate = round(self.fill_rate / (os.path.getsize(self.filename) - 16384), 4)
         print(self.__str__())
+        return self.__str__()
 
     def __coalesce_or_redistribute(self, node) -> bool:
         if node.is_root():
@@ -297,5 +317,41 @@ class BPlusTree:
         self.memory.put_page(brother.page_offset, brother)
         return True
 
-    def __split_node(self, node: Node):
-        pass
+    def __split_node(self, node: Node) -> Tuple[Node, Node, Node]:
+        if node.is_leaf:
+            right = LeafNode(is_leaf=True)
+        else:
+            right = Node()
+        self.node_count += 1
+        if node.page_offset == self.root_page_id:
+            top = Node()
+            self.node_count += 1
+        else:
+            top = self.memory.get_page(node.page_parent)
+
+
+        mid = int(len(node.keys) // 2)
+
+        right.keys = node.keys[mid:]
+        right.values = node.values[mid:]
+        right.page_prev = node.page_offset
+        right.page_next = node.page_next
+        right.page_parent = top.page_offset
+
+        if len(top.keys) > 0:
+            index = find_last_leq(top.keys, right.keys[0])
+            top.keys.insert(index + 1, right.keys[0])
+            top.values.insert(index + 1, right.page_offset)
+        else:
+            top.keys = [node.keys[0], right.keys[0]]
+            top.values = [node.page_offset, right.page_offset]
+
+
+        node.keys = node.keys[:mid]
+        node.values = node.values[:mid]
+        node.page_parent = top.page_offset
+        node.page_next = right.page_offset
+
+        top.is_changed = node.is_changed = right.is_changed = True
+
+        return top, node, right

@@ -90,7 +90,7 @@ class Memorymanagement:
         :return: 实例化的Node或LeafNode对象。
         """
         # 判断page_id是否合法
-        if page_id is None or page_id <= 0:
+        if page_id is None or int(page_id) <= 0:
             raise ValueError("Page ID must be greater than 0.")
 
         # 计算页面在文件中的偏移量，16384为metadata固定偏移量
@@ -104,11 +104,9 @@ class Memorymanagement:
             raw_data = file.read(Node.page_max_size)
 
         # 反序列化数据
-        # TODO: 这里需要根据实际二进制文件的大小来读取，否则会报错
         format_str = "=QQQQIQ"  # 与serialize方法中的格式匹配
 
         # 首先读取节点的头部数据，再根据节点类型返回去读记录数据
-        # full_format_str = format_str + keys_format_str + values_format_str
         try:
             meta_data = struct.unpack(format_str, raw_data[:5 * 8 + 4 * 1])
             page_offset, page_parent, page_prev, page_next, is_leaf, records_size = meta_data
@@ -125,7 +123,7 @@ class Memorymanagement:
                 break
 
         except struct.error as e:
-            print(e.with_traceback())
+            print(e.with_traceback)
             raise ValueError(f"Error reading page at id {page_id}, possibly due to corrupted data.")
 
         # 解析unpacked_data来实例化Node或LeafNode
