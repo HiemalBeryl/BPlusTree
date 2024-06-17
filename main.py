@@ -37,6 +37,12 @@ class BPlusTree:
             filename=self.filename
         )
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     @staticmethod
     def create(filename: str, page_size: int, capacity: int) -> 'BPlusTree':
         """
