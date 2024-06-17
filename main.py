@@ -10,7 +10,6 @@ from utils import find_last_leq
 
 class BPlusTree:
     def __init__(self, **kwargs):
-        # TODO: 树metadata的存储
         self.root_page_id = kwargs.get("root_page_id", 1)  # 根节点位置
         self.page_size = kwargs.get("page_size", 0)  # 页面大小
         self.fill_rate = kwargs.get("fill_rate", 0.0)  # 填充率，即节点已用空间与总空间的比例
