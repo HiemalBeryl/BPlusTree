@@ -56,6 +56,7 @@ class BPlusTree:
         if os.path.exists(filename):
             memory = Memorymanagement(filename, capacity)
             d = memory.read_metadata()
+            print(d)
             if d is None:
                 d = {
                     'root_page_id': 1,
@@ -195,7 +196,7 @@ class BPlusTree:
         with open(self.filename, 'rb') as file:
             self.page_size = Node.page_max_size
             # 随机找一个数，看获取多少次页面可以走到根节点即可得到树高
-            node = self.memory.get_page(48693)
+            node = self.memory.get_page(4869)
             height = 0
             while not node.is_leaf:
                 height += 1
@@ -214,8 +215,7 @@ class BPlusTree:
                     else:
                         page_offsets.extend(node.values)
                 self.fill_rate = round(self.fill_rate / (os.path.getsize(self.filename) - 16384), 4)
-        print(self.__str__())
-        return self.__str__()
+        return self.__dict__
 
     def __coalesce_or_redistribute(self, node) -> bool:
         if node.is_root():

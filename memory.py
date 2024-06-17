@@ -159,6 +159,7 @@ class Memorymanagement:
 
     def write_metadata(self, **kwargs) -> bool:
         # 将kwargs转换成bytes
+        empty: bytes = b"\x00" * 2000
         serialize: bytes = json.dumps(kwargs).encode('utf-8')
 
         # 计算页面在文件中的偏移量，16384为metadata固定偏移量
@@ -166,6 +167,8 @@ class Memorymanagement:
 
         # 移动文件指针到指定位置并写入数据
         with open(self.filename, "r+b") as file:
+            file.seek(page_offset)
+            file.write(empty)
             file.seek(page_offset)
             file.write(serialize)
         return True
@@ -181,8 +184,10 @@ class Memorymanagement:
             # 读取页面数据
             raw_data = file.read(16384).split(b"\x00")[0]
         try:
-            str = raw_data.decode('utf-8')
-            return json.loads(str)
+            s = raw_data.decode('utf-8')
+            s = s[:s.find("}") + 1]
+            j = json.loads(s)
+            return j
         except JSONDecodeError as e:
-            print(e)
+            print(e.with_traceback())
             return None

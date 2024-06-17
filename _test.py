@@ -58,7 +58,7 @@ class MyTestCase(unittest.TestCase):
     def test_get_status(self):
         """测试get_status()方法"""
         with BPlusTree.create("test.db", 4096, 1000) as tree:
-            tree.get_status()
+            print(tree.get_status())
 
     def test_del_and_read(self):
         """删除数据后，再进行读取，查看此时B+树的效率变化以及节点的合并次数"""
