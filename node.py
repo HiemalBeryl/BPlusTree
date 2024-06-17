@@ -9,27 +9,27 @@ class Node:
     B+树节点（页面）
     Attributes:
         page_count: 计数器，用于产生页面的唯一id
-        page_max_size: 页面的大小上限，默认为16kb，超出上限后页面应该主动分裂
+        page_max_size: 页面的大小上限，默认为4kb，超出上限后页面应该主动分裂
         default_merge_size: 页面的合并默认大小，默认为7kb，当两个相邻的页面大小都小于改值时应主动合并
     """
     # TODO:页面存在频繁的删除创建。必然会存在之前分配过的页面id被删除，存在空页，需要重新进行利用
     page_count: int = 0
-    page_max_size: int = 16384
-    default_merge_size = 8192 - 1024
+    page_max_size: int = 4096
+    default_merge_size = 2048 - 32
 
-    def __init__(self, page_parent: Optional[int] = None, is_leaf: bool = False):
+    def __init__(self, page_parent: Optional[int] = None, is_leaf: bool = False, page_offset: Optional[int] = None):
         """
         Attributes:
-            page_offset: 当前页面唯一id，也是后续B+树在硬盘文件中查询时的偏移量
-            page_parent: 当前页面的父节点
-            page_prev: 上一个节点
-            page_next: 下一个节点
-            keys: 记录的主键
-            values: 当节点为非叶子节点时，表示key对应的子页面id；当节点为叶子节点时，表示对应的str数据
-            is_leaf: 节点类型
+            :page_offset: 当前页面唯一id，也是后续B+树在硬盘文件中查询时的偏移量
+            :page_parent: 当前页面的父节点
+            :page_prev: 上一个节点
+            :page_next: 下一个节点
+            :keys: 记录的主键
+            :values: 当节点为非叶子节点时，表示key对应的子页面id；当节点为叶子节点时，表示对应的str数据
+            :is_leaf: 节点类型
         """
         Node.page_count += 1
-        self.page_offset = Node.page_count
+        self.page_offset = Node.page_count if page_offset is None else page_offset
         self.page_parent: Optional[int] = page_parent
         self.page_prev: Optional[int] = None
         self.page_next: Optional[int] = None
@@ -45,13 +45,21 @@ class Node:
         序列化Node对象到二进制数据。
         """
         # 定义每个字段的格式和大小
-        format_str = "=QQQQI"  # page_offset, page_parent, page_prev, page_next 使用Q表示8字节整数，is_leaf 使用I表示4字节整数
+        format_str = "=QQQQIQ"  # page_offset, page_parent, page_prev, page_next 使用Q表示8字节整数，is_leaf 使用I表示4字节整数, record_size表示总记录数
         keys_format_str = "i" * len(self.keys)  # 假设keys都是int类型，每个用i表示4字节整数
-        values_format_str = "i" if not self.is_leaf else "s" * len(self.values)  # 非叶节点values是int，叶节点是str
-
-        # 计算values部分的格式字符串长度
-        if self.is_leaf:
-            values_format_str = keys_format_str.replace("i", "s")  # 保持keys和values长度一致，str长度需预估或动态调整
+        formatted_parts = []
+        # values保存int或str数据，此处全部作为str处理
+        for index, key in enumerate(self.keys):
+            # 获取字符串的长度
+            if type(self.values[index]) is int:
+                length = len(str(self.values[index]).encode("utf-8"))
+            else:
+                length = len(self.values[index].encode("utf-8"))
+            # 根据字符串长度生成对应的格式化字符串，如字符串长度为3，则生成"3s"
+            formatted_part = f"{length}s"
+            # 将生成的格式化字符串添加到列表中
+            formatted_parts.append(formatted_part)
+        values_format_str = "x".join(formatted_parts) + "x"
 
         # 拼接完整的格式字符串
         full_format_str = format_str + keys_format_str + values_format_str
@@ -63,14 +71,16 @@ class Node:
             self.page_prev or 0,
             self.page_next or 0,
             int(self.is_leaf),
-            *self.keys,
+            len(self.keys),
+            *self.keys
         ]
 
         # 处理values，注意str需要编码为bytes
-        if self.is_leaf:
-            data.extend(value.encode() for value in self.values)
-        else:
-            data.extend(self.values)
+        for i, key in enumerate(self.keys):
+            if type(self.values[i]) is int:
+                data.append(str(self.values[i]).encode())
+            else:
+                data.append(self.values[i].encode())
 
         # 打包数据为二进制
         serialized_data = struct.pack(full_format_str, *data)
@@ -88,6 +98,8 @@ class Node:
     def split(self, top: Optional['Node'] = None) -> tuple['Node', 'Node', 'Node']:
         """当达到页面大小上限时分裂节点"""
         top = Node() if top is None else top
+        if not (self.page_parent is None or self.page_parent <= 0):
+            top.page_parent = self.page_parent
         right = Node()
         mid = int(len(self.keys) // 2)
 
@@ -98,13 +110,12 @@ class Node:
 
         if len(top.keys) > 0:
             index = find_last_leq(top.keys, right.keys[0])
-            top.keys.insert(index, right.keys[0])
-            top.values.insert(index, right.page_offset)
+            top.keys.insert(index + 1, right.keys[0])
+            top.values.insert(index + 1, right.page_offset)
         else:
             top.keys = [self.keys[0], right.keys[0]]
             top.values = [self.page_offset, right.page_offset]
             right.page_parent = top.page_offset
-            self.page_offset = top.page_offset
 
         self.keys = self.keys[:mid + 1]
         self.values = self.values[:mid + 1]
@@ -169,8 +180,11 @@ class LeafNode(Node):
                 high = mid
         return low
 
+    # TODO： 分裂方法提取到main中
     def split(self, top: Optional['Node'] = None) -> tuple['Node', 'Node', 'Node']:
         top = Node() if top is None else top
+        if not (self.page_parent is None or self.page_parent <= 0):
+            top.page_parent = self.page_parent
         right = LeafNode(top.page_offset, True)
         mid = int(len(self.keys) // 2)
 
@@ -181,13 +195,12 @@ class LeafNode(Node):
 
         if len(top.keys) > 0:
             index = find_last_leq(top.keys, right.keys[0])
-            top.keys.insert(index, right.keys[0])
-            top.values.insert(index, right.page_offset)
+            top.keys.insert(index + 1, right.keys[0])
+            top.values.insert(index + 1, right.page_offset)
         else:
             top.keys = [self.keys[0], right.keys[0]]
             top.values = [self.page_offset, right.page_offset]
             right.page_parent = top.page_offset
-            self.page_offset = top.page_offset
 
         self.keys = self.keys[:mid + 1]
         self.values = self.values[:mid + 1]

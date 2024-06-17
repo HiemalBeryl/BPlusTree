@@ -9,21 +9,37 @@ from utils import find_last_leq
 
 
 class BPlusTree:
-    def __init__(self):
-        self.root_page_id = 0  # 根节点位置
-        self.page_size = 0  # 页面大小
-        self.max_keys_per_node = 0  # 每个节点最大键值数
-        self.fill_rate = 0.0  # 填充率，即节点已用空间与总空间的比例
-        self.height = 0  # 树的高度或层数
-        self.node_count = 0  # 节点总数
-        self.split_count = 0  # 分裂次数
-        self.merge_count = 0  # 合并次数
+    def __init__(self, **kwargs):
+        # TODO: 树metadata的存储
+        self.root_page_id = kwargs.get("root_page_id", 1)  # 根节点位置
+        self.page_size = kwargs.get("page_size", 0)  # 页面大小
+        self.fill_rate = kwargs.get("fill_rate", 0.0)  # 填充率，即节点已用空间与总空间的比例
+        self.height = kwargs.get("height", 0)  # 树的高度或层数
+        self.node_count = kwargs.get("node_count", 0)  # 节点总数
+        self.split_count = kwargs.get("split_count", 0)  # 分裂次数
+        self.merge_count = kwargs.get("merge_count", 0)  # 合并次数
+        self.max_page_count = kwargs.get("max_page_count", 0)  # 最大页面id
+        self.empty_page_count = kwargs.get("empty_page_count", [])  # 空闲页面id
+        self.filename = kwargs.get("filename", None)
 
-        self.file = None
-        self.root_node: Optional[Node] = None
-        self.memory: Optional[Memorymanagement] = None
+        self.root_node: Optional[Node] = kwargs.get("root_node", None)
+        self.memory: Optional[Memorymanagement] = kwargs.get("memory", None)
 
-    def create(self, filename: str, page_size: int, capacity: int) -> Memorymanagement:
+        self.memory.write_metadata(
+            root_page_id=self.root_page_id,
+            page_size=self.page_size,
+            fill_rate=self.fill_rate,
+            height=self.height,
+            node_count=self.node_count,
+            split_count=self.split_count,
+            merge_count=self.merge_count,
+            max_page_count=self.max_page_count,
+            empty_page_count=self.empty_page_count,
+            filename=self.filename
+        )
+
+    @staticmethod
+    def create(filename: str, page_size: int, capacity: int) -> 'BPlusTree':
         """
         创建一个新的B+树文件或打开已存在的文件。
 
@@ -31,60 +47,118 @@ class BPlusTree:
         :param page_size: 页面大小。
         """
         # 检查文件是否存在
+        d: Optional[dict] = None
         if os.path.exists(filename):
-            self.file = open(filename, 'r+b')  # 读写二进制模式打开
-            # TODO： 这里可以添加读取metadata的逻辑，如果需要的话
+            memory = Memorymanagement(filename, capacity)
+            d = memory.read_metadata()
+            if d is None:
+                d = {
+                    'root_page_id': 1,
+                    'page_size': 16384,
+                    'root_node': LeafNode(is_leaf=True),
+                }
+            rid = d.get('root_page_id')
+            assert rid is not None
+            root_node = memory.get_page(rid)
+            d['root_node'] = root_node
+            d['memory'] = memory
+            d['filename'] = filename
         else:
-            self.file = open(filename, 'w+b')  # 读写二进制模式创建新文件
-            # TODO： 初始化metadata，例如写入一些默认值或空值占位
+            with open(filename, 'w+b') as file:  # 读写二进制模式创建新文件
+                pass
+            memory = Memorymanagement(filename, capacity)
+            root_node = LeafNode(is_leaf=True)
+            d = {
+                'root_page_id': 1,
+                'page_size': 16384,
+                'root_node': root_node,
+                'memory': memory,
+                'filename': filename
+            }
+            memory.write_to_disk(root_node)
 
-        self.memory = Memorymanagement(self.file, capacity)
-        return self.memory
+        return BPlusTree(**d)
 
-    def close(self, filename: str) -> bool:
-        """
-        关闭已打开的B+树文件。
+    def close(self) -> bool:
+        """关闭已打开的B+树文件。"""
+        print("prepare to close")
 
-        :param filename: 文件名，虽然参数传入但实际操作基于类的成员变量。
-        """
-        if hasattr(self, 'file') and self.file is not None:
-            self.file.close()
-            self.file = None
-            return True
-        return False
+        self.memory.clear()
+        self.memory.write_metadata(
+            root_page_id=self.root_page_id,
+            page_size=self.page_size,
+            fill_rate=self.fill_rate,
+            height=self.height,
+            node_count=self.node_count,
+            split_count=self.split_count,
+            merge_count=self.merge_count,
+            max_page_count=self.max_page_count,
+            empty_page_count=self.empty_page_count,
+            filename=self.filename
+        )
+        return True
 
     def get(self, key: int) -> Optional[str]:
-        node = self.root_node.keys
+        node = self.root_node
         while True:
-            index = find_last_leq(node, key)
-            node = self.memory.get_page(self.root_node.values[index])
+            index = find_last_leq(node.keys, key)
             if node.is_leaf:
-                r = find_last_leq(node.keys, key)
-                if r == key:
-                    return node.values[r]
+                if node.keys[index] == key:
+                    return node.values[index]
                 else:
                     return None
+            else:
+                node = self.memory.get_page(node.values[index])
+
 
     def insert(self, key: int, value: str):
         if self.root_node is None:
             self.root_node = LeafNode(is_leaf=True)
             self.root_node.keys.append(key)
             self.root_node.values.append(value)
+            self.memory.put_page(self.root_node.page_offset, self.root_node)
         else:
             # 1. 首先找到叶子节点，向叶子节点中插入数据
             node = self.root_node
             while node.is_leaf is False:
-                node = self.memory.get_page(self.root_node.values[find_last_leq(node.keys, key)])
-            index = find_last_leq(node.keys, key)
-            node.keys.insert(index, key)
-            node.values.insert(index, value)
+                try:
+                    i = find_last_leq(node.keys, key)
+                    node = self.memory.get_page(node.values[i])
+                except Exception as e:
+                    print(i)
+                    print(node.keys)
+                    print(node.values)
+                    print(node.page_offset)
+                    print(e.with_traceback)
+            # 1.1 相同主键的id只允许存在一条，如果重复插入则覆盖前面的数据
+            if key in node.keys:
+                index = node.keys.index(key)
+                node.values[index] = value
+                node.is_changed = True
+                self.memory.put_page(node.page_offset, node)
+            else:
+                index = find_last_leq(node.keys, key) + 1
+                node.keys.insert(index, key)
+                node.values.insert(index, value)
+                node.is_changed = True
+                self.memory.put_page(node.page_offset, node)
             # 2. 如果叶子节点插入后已满，则分裂节点
             if len(node.serialize()) <= Node.page_max_size:
                 return True
             else:
+                node_is_leaf = True
                 while True:
-                    p, l, r = node.split(self.memory.get_page(node.page_parent))
+                    if node.page_parent is None or node.page_parent <= 0:
+                        p = None
+                    else:
+                        p = self.memory.get_page(node.page_parent)
+                    p, l, r = node.split(p)
                     self.split_count += 1
+                    if p.page_parent is None:
+                        self.root_page_id = p.page_offset
+                        self.root_node = p
+                    if not node_is_leaf:
+                        p.is_leaf = l.is_leaf = r.is_leaf = False
                     self.memory.put_page(p.page_offset, p)
                     self.memory.put_page(l.page_offset, l)
                     self.memory.put_page(r.page_offset, r)
@@ -92,13 +166,14 @@ class BPlusTree:
                     if len(p.serialize()) <= Node.page_max_size:
                         break
                     node = p
+                    node_is_leaf = False
 
     def delete(self, key: int) -> int:
         """删除页面中指定键值的数据。返回删除条数（0或1）"""
         #TODO: 删除操作不会设置节点的属性为叶节点，需要在每个操作中加入(叶节点不会在删除操作中出现，删除不改变树的degree √√√√√)
         node = self.root_node
         while node.is_leaf is False:
-            node = self.memory.get_page(self.root_node.values[find_last_leq(node.keys, key)])
+            node = self.memory.get_page(node.values[find_last_leq(node.keys, key)])
         index = find_last_leq(node.keys, key)
         # 在叶子节点中不存在要删除的数据，返回0
         if node.keys[index] != key:
@@ -108,7 +183,7 @@ class BPlusTree:
             node.values.pop(index)
             # 叶节点删除记录之后没有处于半满状态需要合并相邻节点或者重新分配
             if len(node.serialize()) < Node.default_merge_size:
-                self.coalesce_or_redistribute(node)
+                self.__coalesce_or_redistribute(node)
 
         node.is_changed = True
         self.memory.put_page(node.page_offset, node)
@@ -117,9 +192,9 @@ class BPlusTree:
     def get_status(self):
         print(self.__str__())
 
-    def coalesce_or_redistribute(self, node) -> bool:
+    def __coalesce_or_redistribute(self, node) -> bool:
         if node.is_root():
-            return self.adjust_root(node)
+            return self.__adjust_root(node)
 
         # 找到相邻的兄弟节点
         brother = None
@@ -135,9 +210,9 @@ class BPlusTree:
             # 如果两个节点的大小和大于 max_size，就直接重新分配，否则直接合并兄弟节点
             is_merge = len(node.serialize()) + len(brother.serialize()) <= Node.page_max_size
             if is_merge:
-                self.coalesce(node, brother)
+                self.__coalesce(node, brother)
             else:
-                self.redistribute(node, brother)
+                self.__redistribute(node, brother)
 
             node.is_changed = True
             brother.is_changed = True
@@ -147,7 +222,7 @@ class BPlusTree:
             return is_merge
         return False
 
-    def adjust_root(self, old_root_node: Node) -> bool:
+    def __adjust_root(self, old_root_node: Node) -> bool:
         """
         此函数处理根节点的合并过程，包括下面两种情况
         1. 根节点经过删除操作后，根节点只有一个孩子节点，则直接调整根节点为合并后的叶子节点
@@ -173,7 +248,7 @@ class BPlusTree:
 
         return is_deleted
 
-    def coalesce(self, node: Node, brother: Node) -> bool:
+    def __coalesce(self, node: Node, brother: Node) -> bool:
         # 如果兄弟节点在右边，需要交换两个指针的值，这样就能确保数据移动方向是从右到左
         l_node, r_node = (brother, node) if node.page_next == brother.page_offset else (node, brother)
         assert l_node.page_parent == r_node.page_parent
@@ -193,9 +268,10 @@ class BPlusTree:
         p_node.keys.pop(r_index)
         p_node.values.pop(r_index)
         self.memory.put_page(p_node.page_offset, p_node)
-        return self.coalesce_or_redistribute(p_node)
+        self.merge_count += 1
+        return self.__coalesce_or_redistribute(p_node)
 
-    def redistribute(self, node: Node, brother: Node) -> bool:
+    def __redistribute(self, node: Node, brother: Node) -> bool:
         """将兄弟节点的一个键值对移动到 node 中"""
         # 更新父节点
         p_node = self.memory.get_page(node.page_parent)
@@ -221,3 +297,6 @@ class BPlusTree:
         self.memory.put_page(node.page_offset, node)
         self.memory.put_page(brother.page_offset, brother)
         return True
+
+    def __split_node(self, node: Node):
+        pass

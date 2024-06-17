@@ -1,5 +1,7 @@
+import json
 import struct
 from collections import OrderedDict
+from json import JSONDecodeError
 from typing import Optional
 
 from node import Node, LeafNode
@@ -7,16 +9,18 @@ from node import Node, LeafNode
 
 class Memorymanagement:
     """简单的缓存管理，利用有序列表实现LRU策略，所有页面保存在此，能够缓存的最大页面数在初始化时手动设定"""
+
     #TODO: 弄清楚ordereddict是如何组织数据的，ai生成的好像不对，page——id不等于下标
-    def __init__(self, file, capacity: int):
+    def __init__(self, filename: str, capacity: int):
         """
         初始化内存管理器，设定缓存容量。
 
         :param capacity: 缓存的最大容量，单位为页面数量。
         """
-        self.file = file
+        self.filename = filename
         self.capacity = capacity
         self.cache = OrderedDict()
+        self.empty_page_count = []  # 空闲页面id
 
     def get_page(self, page_id: int) -> Optional[Node]:
         """
@@ -42,27 +46,21 @@ class Memorymanagement:
         :param page_id: 页面ID。
         :param page: 页面对象。
         """
-        #先检查缓存中是否已有对应id的页面，已存在则对其进行更新并移到队尾
-        if self.exists(page_id):
+        # 先检查缓存中是否已有对应id的页面，已存在则对其进行更新并移到队尾
+        if page_id in self.cache:
+            self.cache.update({page_id: page})
             self.cache.move_to_end(page_id)
-            self.cache[self.capacity - 1] = page
             return None
         if len(self.cache) >= self.capacity:
             # 缓存已满，淘汰最老的页面，将其持久化到磁盘中
             popitem = self.cache.popitem(last=False)
-            if isinstance(popitem, Node):
-                if popitem.is_changed:
-                    self.write_to_disk(popitem)
+            if isinstance(popitem[1], Node):
+                if popitem[1].is_changed:
+                    self.write_to_disk(popitem[1])
+            else:
+                print("还是不行")
+                print(type(popitem[1]))
         self.cache[page_id] = page
-
-    def exists(self, page_id: int) -> bool:
-        """
-        判断页面ID是否存在于缓存中。
-
-        :param page_id: 页面ID。
-        :return: 存在与否的布尔值。
-        """
-        return page_id in self.cache
 
     def evict_least_recently_used(self) -> None:
         """
@@ -70,9 +68,9 @@ class Memorymanagement:
         """
         if self.cache:
             popitem = self.cache.popitem(last=False)
-            if isinstance(popitem, Node):
-                if popitem.is_changed:
-                    self.write_to_disk(popitem)
+            if isinstance(popitem[1], Node):
+                if popitem[1].is_changed:
+                    self.write_to_disk(popitem[1])
 
     def clear(self) -> None:
         """
@@ -93,54 +91,100 @@ class Memorymanagement:
         """
         # 判断page_id是否合法
         if page_id is None or page_id <= 0:
-            return None
             raise ValueError("Page ID must be greater than 0.")
 
         # 计算页面在文件中的偏移量，16384为metadata固定偏移量
-        page_offset = 16384 + (page_id - 1) * Node.page_max_size
+        page_offset = 16384 + ((page_id - 1) * Node.page_max_size)
 
-        # 移动文件指针到指定位置
-        self.file.seek(page_offset)
+        with open(self.filename, "rb") as file:
+            # 移动文件指针到指定位置
+            file.seek(page_offset)
 
-        # 读取页面数据
-        raw_data = self.file.read(Node.page_max_size)
+            # 读取页面数据
+            raw_data = file.read(Node.page_max_size)
 
         # 反序列化数据
-        format_str = "=QQQQI"  # 与serialize方法中的格式匹配
-        keys_format_str = "i" * Node.page_max_size  # 简化假设，实际情况可能需要更复杂的解析逻辑
-        values_format_str = "i"  # 同样简化假设
+        # TODO: 这里需要根据实际二进制文件的大小来读取，否则会报错
+        format_str = "=QQQQIQ"  # 与serialize方法中的格式匹配
 
-        full_format_str = format_str + keys_format_str + values_format_str
+        # 首先读取节点的头部数据，再根据节点类型返回去读记录数据
+        # full_format_str = format_str + keys_format_str + values_format_str
         try:
-            unpacked_data = struct.unpack(full_format_str, raw_data)
-        except struct.error:
+            meta_data = struct.unpack(format_str, raw_data[:5 * 8 + 4 * 1])
+            page_offset, page_parent, page_prev, page_next, is_leaf, records_size = meta_data
+            raw_data = raw_data[5 * 8 + 4 * 1:]
+            keys_format_str = "i" * records_size
+            keys = list(struct.unpack(keys_format_str, raw_data[:records_size * 4]))
+            raw_data = raw_data[records_size * 4:]
+            values = []
+            binary_data = raw_data.split(b"\x00")
+            for b in binary_data:
+                if b:
+                    values.append(b.decode("utf-8"))
+                    continue
+                break
+
+        except struct.error as e:
+            print(e.with_traceback())
             raise ValueError(f"Error reading page at id {page_id}, possibly due to corrupted data.")
 
         # 解析unpacked_data来实例化Node或LeafNode
         # 注意：此处的解析逻辑需要根据实际的serialize方法来调整，以下仅为示例
-        page_offset, page_parent, page_prev, page_next, is_leaf_flag, *rest = unpacked_data
-        keys = rest[:len(rest) // 2]  # 简单分割keys和values，实际逻辑可能更复杂
-        values = rest[len(rest) // 2:]
 
-        if is_leaf_flag:
-            node = LeafNode(page_parent, True)
+        if is_leaf:
+            node = LeafNode(int(page_parent), True)
+            node.values = values
         else:
-            node = Node(page_parent, False)
+            node = Node(int(page_parent), False)
+            node.values = [int(value) for value in values]
 
-        node.page_offset = page_offset
-        node.page_prev = page_prev
-        node.page_next = page_next
+        node.page_offset = int(page_offset)
+        node.page_parent = int(page_parent)
+        node.page_prev = int(page_prev)
+        node.page_next = int(page_next)
+        node.is_leaf = bool(is_leaf)
+        node.size = int(records_size)
         node.keys = keys
-        node.values = values  # 注意：对于非叶节点，values是子节点的page_id，需要进一步处理
 
         return node
 
     def write_to_disk(self, page) -> bool:
         serialize: bytes = page.serialize()
         # 计算页面在文件中的偏移量，16384为metadata固定偏移量
-        page_offset = 16384 + (page.page_offset - 1) * Node.page_max_size
+        page_offset = 16384 + ((page.page_offset - 1) * Node.page_max_size)
 
         # 移动文件指针到指定位置并写入数据
-        self.file.seek(page_offset)
-        self.file.write(serialize)
+        with open(self.filename, "r+b") as file:
+            file.seek(page_offset)
+            file.write(serialize)
         return True
+
+    def write_metadata(self, **kwargs) -> bool:
+        # 将kwargs转换成bytes
+        serialize: bytes = json.dumps(kwargs).encode('utf-8')
+
+        # 计算页面在文件中的偏移量，16384为metadata固定偏移量
+        page_offset = 0
+
+        # 移动文件指针到指定位置并写入数据
+        with open(self.filename, "r+b") as file:
+            file.seek(page_offset)
+            file.write(serialize)
+        return True
+
+    def read_metadata(self) -> Optional[dict]:
+        # 计算页面在文件中的偏移量，16384为metadata固定偏移量
+        page_offset = 0
+
+        with open(self.filename, "rb") as file:
+            # 移动文件指针到指定位置
+            file.seek(page_offset)
+
+            # 读取页面数据
+            raw_data = file.read(16384).split(b"\x00")[0]
+        try:
+            str = raw_data.decode('utf-8')
+            return json.loads(str)
+        except JSONDecodeError as e:
+            print(e)
+            return None
