@@ -10,7 +10,7 @@ class MyTestCase(unittest.TestCase):
     def test_tree(self):
         with BPlusTree.create("test.db", 4096, 100) as tree:
             tree.insert(1, "hello, World!")
-            tree.insert(2, "GobBye, World!")
+            tree.insert(2, "GoodBye, World!")
             tree.insert(3, "ggez!")
             tree.insert(4, "xpl")
             tree.insert(5, "662666668")
