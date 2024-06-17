@@ -51,14 +51,17 @@ class MyTestCase(unittest.TestCase):
                 print(f"当内存中最大可存放{value}个页面时，平均读取耗时：{round(avg_time / 10)}")
                 result[index] = round(avg_time / 10)
 
+        # 最后将所有结果统一打印到控制台
         for index, value in enumerate(capacity):
             print(f"当内存中最大可存放{value}个页面时，平均读取耗时：{result[index]}")
 
     def test_get_status(self):
+        """测试get_status()方法"""
         with BPlusTree.create("test.db", 4096, 1000) as tree:
             tree.get_status()
 
     def test_del_and_read(self):
+        """删除数据后，再进行读取，查看此时B+树的效率变化以及节点的合并次数"""
         pass
 
 
