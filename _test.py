@@ -33,27 +33,28 @@ class MyTestCase(unittest.TestCase):
 
     def test_read(self):
         capacity = [10,30,50,100,300,500,800,1000,2000,5000]
-        result = []
+        re_time = []
         for index, value in enumerate(capacity):
             with BPlusTree.create("test.db", 4096, value) as tree:
                 r = random.Random()
-                # 随机读取10w条值不为null的记录，重复操作10此取平均值
+                # 随机读取10000条值不为null的记录，重复操作10此取平均值
                 avg_time = 0
                 for i in range(10):
                     start_time = time.time()
                     result = []
-                    for j in range(100000):
+                    for j in range(10000):
                         random_index = r.randint(1, 5000000)
                         result.append({"index": random_index, "value": tree.get(random_index)})
                     print(result)
                     end_time = time.time()
                     avg_time += end_time - start_time
-                print(f"当内存中最大可存放{value}个页面时，平均读取耗时：{round(avg_time / 10)}")
-                result[index] = round(avg_time / 10)
+                print(f"当内存中最大可存放{value}个页面时，平均读取耗时：{round(avg_time / 10, 4)}")
+                re_time.append(round(avg_time / 10, 4))
 
         # 最后将所有结果统一打印到控制台
+        print(re_time)
         for index, value in enumerate(capacity):
-            print(f"当内存中最大可存放{value}个页面时，平均读取耗时：{result[index]}")
+            print(f"{index}.当内存中最大可存放{value}个页面时，平均读取耗时：{re_time[index]}")
 
     def test_get_status(self):
         """测试get_status()方法"""

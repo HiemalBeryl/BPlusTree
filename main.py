@@ -198,9 +198,9 @@ class BPlusTree:
             # 随机找一个数，看获取多少次页面可以走到根节点即可得到树高
             node = self.memory.get_page(4869)
             height = 0
-            while not node.is_leaf:
+            while not node.page_offset == self.root_page_id:
                 height += 1
-                node = self.memory.get_page(height)
+                node = self.memory.get_page(node.page_parent)
             self.height = height + 1
 
             if self.root_node.is_leaf:
