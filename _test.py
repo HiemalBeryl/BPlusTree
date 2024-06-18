@@ -20,7 +20,10 @@ class MyTestCase(unittest.TestCase):
             tree.insert(8, 1234546789)
 
     def test_insert_data(self):
-        """插入500w条数据，id为1到5000000的自增int类型整数，values为随机长度字符串"""
+        """
+        插入500w条数据，id为1到5000000的自增int类型整数，values为随机长度字符串
+        与下面的test_random_insert_data二选一执行
+        """
         times = 50000
         records = 100
         with BPlusTree.create("test.db", 4096, 1000) as tree:
@@ -30,6 +33,23 @@ class MyTestCase(unittest.TestCase):
                     characters = string.ascii_letters + string.digits
                     secure_random_string = ''.join(secrets.choice(characters) for _ in range(length))
                     tree.insert(i * 100 + j + 1, secure_random_string)
+            # 平均耗时1200s，数据库文件100MB+
+
+    def test_random_insert_data(self):
+        """
+        插入500w条数据，id为1到5000000的自增int类型整数，values为随机长度字符串
+        与上面的test_insert_data二选一执行
+        """
+        records = list(range(1, 100 * 50000 + 1))
+        random.shuffle(records)
+        with BPlusTree.create("test.db", 4096, 1000) as tree:
+            while len(records) > 0:
+                length = secrets.randbelow(10 - 5 + 1) + 5
+                characters = string.ascii_letters + string.digits
+                secure_random_string = ''.join(secrets.choice(characters) for _ in range(length))
+                pop = records.pop()
+                print(f"{len(records)}:  index:{pop}, string:{secure_random_string}")
+                tree.insert(pop, secure_random_string)
             # 平均耗时1200s，数据库文件100MB+
 
     def test_read(self):
