@@ -8,9 +8,7 @@ from node import Node, LeafNode
 
 
 class Memorymanagement:
-    """简单的缓存管理，利用有序列表实现LRU策略，所有页面保存在此，能够缓存的最大页面数在初始化时手动设定"""
-
-    #TODO: 弄清楚ordereddict是如何组织数据的，ai生成的好像不对，page——id不等于下标
+    """简单的缓存管理，利用有序列表实现LRU策略，所有页面保存在此，能够缓存的最大页面数capacity在初始化时手动指定"""
     def __init__(self, filename: str, capacity: int):
         """
         初始化内存管理器，设定缓存容量。
@@ -57,9 +55,6 @@ class Memorymanagement:
             if isinstance(popitem[1], Node):
                 if popitem[1].is_changed:
                     self.write_to_disk(popitem[1])
-            else:
-                print("还是不行")
-                print(type(popitem[1]))
         self.cache[page_id] = page
 
     def evict_least_recently_used(self) -> None:
@@ -127,8 +122,6 @@ class Memorymanagement:
             raise ValueError(f"Error reading page at id {page_id}, possibly due to corrupted data.")
 
         # 解析unpacked_data来实例化Node或LeafNode
-        # 注意：此处的解析逻辑需要根据实际的serialize方法来调整，以下仅为示例
-
         if is_leaf:
             node = LeafNode(int(page_parent), True)
             node.values = values

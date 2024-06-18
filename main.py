@@ -173,7 +173,6 @@ class BPlusTree:
 
     def delete(self, key: int) -> int:
         """删除页面中指定键值的数据。返回删除条数（0或1）"""
-        #TODO: 删除操作不会设置节点的属性为叶节点，需要在每个操作中加入(叶节点不会在删除操作中出现，删除不改变树的degree √√√√√)
         node = self.root_node
         while node.is_leaf is False:
             node = self.memory.get_page(node.values[find_last_leq(node.keys, key)])

@@ -7,7 +7,8 @@ from main import BPlusTree
 
 
 class MyTestCase(unittest.TestCase):
-    def test_tree(self):
+    """测试方法应从上向下运行，python版本要求>=3.8，无第三方库使用"""
+    def test_create_tree(self):
         with BPlusTree.create("test.db", 4096, 100) as tree:
             tree.insert(1, "hello, World!")
             tree.insert(2, "GoodBye, World!")
@@ -60,10 +61,6 @@ class MyTestCase(unittest.TestCase):
         """测试get_status()方法"""
         with BPlusTree.create("test.db", 4096, 1000) as tree:
             print(tree.get_status())
-
-    def test_del_and_read(self):
-        """删除数据后，再进行读取，查看此时B+树的效率变化以及节点的合并次数"""
-        pass
 
 
 if __name__ == '__main__':
