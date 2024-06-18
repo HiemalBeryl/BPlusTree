@@ -62,6 +62,18 @@ class MyTestCase(unittest.TestCase):
         with BPlusTree.create("test.db", 4096, 1000) as tree:
             print(tree.get_status())
 
+    def test_del_and_read(self):
+        """删除数据后，再进行读取，查看此时B+树的效率变化以及节点的合并次数"""
+        # TODO: 随机删除100w条数据，查看树的节点合并次数，再次查询查看效率
+        with BPlusTree.create("test.db", 4096, 1000) as tree:
+            r = random.Random()
+            for j in range(10000):
+                random_index = r.randint(1, 5000000)
+                records = tree.delete(random_index)
+                print(f"deleted record is {random_index}, effected line: {records}")
+            print(tree.get_status())
+
+
 
 if __name__ == '__main__':
     unittest.main()

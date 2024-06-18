@@ -223,12 +223,16 @@ class BPlusTree:
         # 找到相邻的兄弟节点
         brother = None
         if node.page_prev is not None or node.page_next is not None:
-            if node.page_prev is not None:
+            if node.page_prev is not None or not node.page_prev <= 0:
                 brother = self.memory.get_page(node.page_prev)
                 if not node.page_parent == brother.page_parent:
                     brother = None
-            else:
+            elif node.page_next is not None or not node.page_next <= 0:
                 brother = self.memory.get_page(node.page_next)
+                if not node.page_parent == brother.page_parent:
+                    brother = None
+            else:
+                pass
 
         if brother is not None:
             # 如果两个节点的大小和大于 max_size，就直接重新分配，否则直接合并兄弟节点
