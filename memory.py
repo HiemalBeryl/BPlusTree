@@ -152,7 +152,7 @@ class Memorymanagement:
 
     def write_metadata(self, **kwargs) -> bool:
         # 将kwargs转换成bytes
-        empty: bytes = b"\x00" * 2000
+        empty: bytes = b"\x00" * Node.page_max_size
         serialize: bytes = json.dumps(kwargs).encode('utf-8')
 
         # 计算页面在文件中的偏移量，16384为metadata固定偏移量
